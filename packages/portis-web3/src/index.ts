@@ -49,7 +49,7 @@ export default class Portis {
 
     // Setup pocket
     this.pocket = new PocketJSCore.Pocket({
-      devID: 'DEVO7QQqPHCK2h3cGXhh2rY',
+      devID: 'devIdHere',
       networkName: 'ETH',
       netIDs: ['4'],
       requestTimeOut: 60000
