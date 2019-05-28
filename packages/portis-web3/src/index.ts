@@ -12,6 +12,7 @@ import { getTxGas } from './utils/getTxGas';
 import { Query } from './utils/query';
 import { styles } from './styles';
 import { validateSecureOrigin } from './utils/secureOrigin';
+import PocketJSCore from 'pocket-js-core';
 
 const version = '$$PORTIS_SDK_VERSION$$';
 const widgetUrl = 'https://widget.portis.io';
@@ -25,6 +26,8 @@ export default class Portis {
     widgetFrame: HTMLDivElement;
   }>;
   provider;
+  pocketProvider;
+  private pocket: PocketJSCore.Pocket;
   private noncesCache = {};
   private _selectedAddress: string;
   private _network: string;
@@ -43,6 +46,15 @@ export default class Portis {
     };
     this.widget = this._initWidget();
     this.provider = this._initProvider();
+
+    // Setup pocket
+    this.pocket = new PocketJSCore.Pocket({
+      devID: 'DEVO7QQqPHCK2h3cGXhh2rY',
+      networkName: 'ETH',
+      netIDs: ['4'],
+      requestTimeOut: 60000
+    });
+    this.pocketProvider = this._initProvider(true);
   }
 
   changeNetwork(network: string | INetwork, gasRelay?: boolean) {
@@ -152,7 +164,7 @@ export default class Portis {
     });
   }
 
-  private _initProvider() {
+  private _initProvider(isPocketProvider = false) {
     const engine = new ProviderEngine();
     const query = new Query(engine);
 
@@ -206,7 +218,7 @@ export default class Portis {
         default:
           var message = `The Portis Web3 object does not support synchronous methods like ${
             payload.method
-          } without a callback parameter.`;
+            } without a callback parameter.`;
           throw new Error(message);
       }
 
@@ -281,18 +293,47 @@ export default class Portis {
       }),
     );
 
-    engine.addProvider({
-      setEngine: _ => _,
-      handleRequest: async (payload, next, end) => {
-        const widgetCommunication = (await this.widget).communication;
-        const { error, result } = await widgetCommunication.relay(payload, this.config);
-        if (payload.method === 'net_version') {
-          this._network = result;
-          engine.networkVersion = this._network;
-        }
-        end(error, result);
-      },
-    });
+    // Check the pocket provider flag and add the pocket provider
+    if (isPocketProvider) {
+      engine.addProvider({
+        setEngine: _ => _,
+        handleRequest: async (payload, next, end) => {
+          console.log(payload);
+          var response = await this.pocket.sendRelay(new PocketJSCore.Relay('ETH', '4', JSON.stringify(payload), this.pocket.configuration));
+          var result;
+          var error;
+          console.log("RESPONSE BELOW:");
+          console.log(response);
+          if (result instanceof Error) {
+            error = result;
+            result = null;
+          } else {
+            result = JSON.parse(response).result;
+            console.log("PARSED RESULT: " + result);
+            error = null;
+          }
+          if (payload.method === 'net_version') {
+            this._network = result;
+            engine.networkVersion = this._network;
+          }
+          end(error, result);
+        },
+      });
+    } else {
+      // TODO: Check if it would be worth it to fall back to Portis's default provider if Pocket fails?
+      engine.addProvider({
+        setEngine: _ => _,
+        handleRequest: async (payload, next, end) => {
+          const widgetCommunication = (await this.widget).communication;
+          const { error, result } = await widgetCommunication.relay(payload, this.config);
+          if (payload.method === 'net_version') {
+            this._network = result;
+            engine.networkVersion = this._network;
+          }
+          end(error, result);
+        },
+      });
+    }
 
     engine.enable = () =>
       new Promise((resolve, reject) => {
